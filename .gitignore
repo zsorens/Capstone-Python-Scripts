@@ -1,0 +1,16 @@
+# Environment files
+.env
+
+# Cached data
+streetview_images/
+descriptions.txt
+store_data/
+
+# Python cache
+**/__pycache__/
+# Forgot maybe having the data from the LMPHW online isn't a smart idea
+data/
+
+
+# Jupyter notebook
+.ipynb_checkpoints
