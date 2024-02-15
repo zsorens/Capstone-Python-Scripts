@@ -107,6 +107,8 @@ def main():
     print(f'Done')
     
     # Group places with possible indicators and without
+    # I am confused upon whether this part of code is checking to see if the indicators are like the permits that exist, or that the 
+    # permits don't exist set up the indicator.
     print('Grouping results... ', end='')
     sys.stdout.flush()
     places_with_indicators = []
