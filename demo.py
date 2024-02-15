@@ -107,7 +107,6 @@ def main():
     print(f'Done')
     
     # Group places with possible indicators and without
-    # This segment of code, what is it really mean by 'possible' indicators or not.
     print('Grouping results... ', end='')
     sys.stdout.flush()
     places_with_indicators = []
