@@ -1,6 +1,9 @@
 # Note: This file interfaces with Microsoft SQl
 # In fall 2023, interfaced with an Azure SQL Database with goals to move it to dedicated internal Microsoft SQL Server.
 #
+# Note: This file interfaces with Microsoft SQl
+# In fall 2023, interfaced with an Azure SQL Database with goals to move it to dedicated internal Microsoft SQL Server.
+#
 import sqlalchemy
 from sqlalchemy import text
 import os
@@ -8,8 +11,14 @@ import dotenv
 import pandas as pd
 import urllib
 from store import Store
+import dotenv
+import os
+os.add_dll_directory (r'C:\\Users\ceywa\anaconda3\Lib\site-packages\clidriver\bin') 
+import ibm_db_dbi as db
+from sqlalchemy import create_engine
+import ibm_db_sa
 dotenv.load_dotenv()
-
+ 
 ODBC_STRING = os.getenv('ODBC_STRING')
 engine = None
 conn = None
@@ -20,22 +29,37 @@ cursor = None
 def set_up() -> None:
     global engine
     global conn
-    global cursor
-    quoted = urllib.parse.quote_plus(ODBC_STRING)
-    engine = sqlalchemy.create_engine('mssql+pyodbc:///?odbc_connect={}'.format(quoted)) # oroginal from pyodbc, but need to format string in sqlalchemy way. See stackoverflwo for why its broken.
+    engine = sqlalchemy.create_engine("db2://inimam01:Impact160@db2.cecsresearch.org:50000/TOBACCO")
     conn = engine.connect()
-
+ 
 # Query database and return respective table as a pandas dataframe.    
 def query(query_string: str) -> pd.DataFrame:
     if not engine:
         raise Exception("Engine is Null, please use set_up()")
     return pd.read_sql(query_string, engine)
-
-
+ 
 # Given Store Data, we save infromation into our stores table in the Database
 # If the store is already present, we update, otherwise we create the store with an insert (i.e, upsert)
 # -> Update Date is historical due to Google TOS. Originally help meatdata like Address, Name, etc. Please see Commits for old sql.py and store_table.sql files.
 def store_to_db(s: Store) -> None:
+    if not engine:
+        raise Exception("Engine is Null, please use set_up()")
+    else:
+        place = s.place
+        query = f'''
+            MERGE INTO stores
+            USING (VALUES('{place['place_id']}')) AS source (place_id)
+            ON stores.place_id = source.place_id
+            WHEN MATCHED THEN
+                UPDATE SET last_updated = CURRENT_TIMESTAMP
+            WHEN NOT MATCHED THEN
+                INSERT (place_id) VALUES ('{place['place_id']}');
+        '''.replace('\n', ' ')
+        conn.execute(text(query))
+        conn.commit()
+    return None
+
+"""def store_to_db(s: Store) -> None:
     if not engine:
         raise Exception("Engine is Null, please use set_up()")
     else:
@@ -51,9 +75,20 @@ def store_to_db(s: Store) -> None:
         conn.execute(text(query))
         conn.commit()
         return None
+    """
 # Need Update with additional flags
 # Right now working with is_triggering to set flag_text  
 def store_flag(s: Store) -> None:
+    if s.is_triggering:
+        query = f'''
+            UPDATE stores
+            SET last_flagged = CURRENT_TIMESTAMP,
+                flag_text = {int(s.is_triggering) if s.is_triggering else 0}
+            WHERE place_id = '{s.place['place_id']}'
+        '''
+        conn.execute(text(query))
+        conn.commit()
+"""def store_flag(s: Store) -> None:
     # Only update when one of the flags are True
     if s.is_triggering == True:
         query = f'''UPDATE stores 
@@ -62,3 +97,9 @@ def store_flag(s: Store) -> None:
         WHERE place_id=\'{s.place['place_id']}\''''
         conn.execute(text(query))
         conn.commit()
+ """
+set_up()
+ 
+# Execute the query and fetch the results into a Pandas DataFrame
+# Print the DataFrame to view the contents of the 'businesses' table
+print(query("SELECT * FROM INIMAM01.Business"))

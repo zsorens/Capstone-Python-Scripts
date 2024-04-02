@@ -1,3 +1,4 @@
+
 import os
 import sys
 import shutil
@@ -87,6 +88,7 @@ class Store:
     def get_streetview_image(self, images_dir = None, verbose = False):
         if not images_dir: # If we provide null, give the one we created it with.
             images_dir = self.images_dir
+        os.makedirs(images_dir, exist_ok=True)  # Create the directory if it doesn't exist
         if verbose:
             print('Getting streetview images... ', end='')
             sys.stdout.flush()
@@ -98,12 +100,25 @@ class Store:
             if verbose:
                 print('ERROR: Unable to retrieve streetview image for {0}'.format(self.place['name']), end='')
         else:
-            image_path = '{dir}/{place_id}.jpg'.format(
+            try:
+                image_path = '{dir}/{place_id}.jpg'.format(
+                    dir=images_dir,
+                    place_id=self.place['place_id'])
+                print(f"Saving streetview image to: {image_path}")
+                with open(image_path, 'wb') as f:
+                    f.write(image)
+                print(f"Streetview image saved for {self.place['name']} at {image_path}")
+            except IOError as e:
+                print(f"Error saving streetview image for {self.place['name']}: {e}")
+            except KeyError as e:
+                print(f"Error accessing place data for {self.place['name']}: {e}")
+
+            """image_path = '{dir}/{place_id}.jpg'.format(
             dir=images_dir,
             place_id=self.place['place_id'])
             with open(image_path, 'wb') as f:
-                f.write(image)
-        self.image_path = image_path if image else None # Set the image_path if we puleld an image.
+                f.write(image)"""
+        self.image_path = image_path if image else None # Set the image_path if we pulled an image.
         if verbose:
             print('Done')
             sys.stdout.flush()
@@ -111,30 +126,30 @@ class Store:
     # # #
     # Review Images
     # images_dir exepcts filepath relative to function to save photos
-    def get_review_image(self, images_dir = None, verbose = False):
-        if not images_dir: # If we provide null, give the one we created it with it. Essentially allows to manualy override place to save.
+
+    def get_review_image(self, images_dir=None, verbose=False):
+        if not images_dir:
             images_dir = self.images_dir
         if verbose:
-            print(f'Getting review images...', end = '')
+            print(f'Getting review images...', end='')
             sys.stdout.flush()
-        if not self.photos: # Photos are retrieved from _get_place_details(). If we didn't get photos no use in moving forward (and prevents errors).
+        if not self.photos:
             print(f'No list of photos in store.photos, Skipping')
             self.review_images_dir = None
             return self
-        review_images_dir = f"{images_dir}/{self.place['place_id']}" # Default, streeview_images/{place_id}/photo.jpg
-        if not os.path.isdir(review_images_dir):
-            os.mkdir(review_images_dir)
+        review_images_dir = f"{images_dir}/{self.place['place_id']}"
+        os.makedirs(review_images_dir, exist_ok=True)  # Create the directory if it doesn't exist
         self.review_images_dir = review_images_dir
-        for photo in self.photos:
+        for i, photo in enumerate(self.photos, start=1):
             image_review = get_place_photo(photo['photo_reference'])
-            image_path = '{review_images_dir}/{photo_id}.jpg'.format(
-                    review_images_dir = review_images_dir,
-                    photo_id=photo['photo_reference'])
+            image_filename = f"review_image_{i}.jpg"
+            image_path = os.path.join(review_images_dir, image_filename)
             with open(image_path, 'wb') as f:
                 f.write(image_review)
         if verbose:
             print(f'Done')
         return self
+
     # # # 
     # Extracting image text
     # reviews -> If you don't want to process the reviews as theres a LOT of images
@@ -165,32 +180,33 @@ class Store:
             print(f'Done')
         return self
     # Check triggers for all our variables.
-    def trigger_check(self, trigger_phrases, verbose = False, desc = False):
+    def trigger_check(self, trigger_phrases, verbose=False, desc=False):
         if verbose:
             print('Checking if store names or extracted text is triggering...', end='')
             sys.stdout.flush()
         name = self.place['name']
-        strings = [name] # We should always have the name
-        if self.image_text: stringss += self.image_text # Image text of streeview image.
-        
-        self.trigger_street = any_text_triggering(strings,trigger_phrases) # Streetview + name
-        self.trigger_review_image = any_text_triggering(self.image_review_text, trigger_phrases) if self.image_review_text else None# User-submitted images
-        self.trigger_review = any_text_triggering(sum([x['text'].split(' ') for x in self.reviews], []),trigger_phrases) if self.reviews else None# Review Text
-        self.trigger_website = search_key_terms(self.website,trigger_phrases) if self.website else None
-        self.is_triggering = any([self.trigger_street, 
-                                  self.trigger_review_image, 
-                                  self.trigger_review,
-                                  self.trigger_website])
-        
+        strings = [name]  # We should always have the name
+        if self.image_text:
+            strings += self.image_text  # Image text of streetview image
+
+        self.trigger_street = any_text_triggering(strings, trigger_phrases)  # Streetview + name
+        self.trigger_review_image = any_text_triggering(self.image_review_text, trigger_phrases) if self.image_review_text else None  # User-submitted images
+        self.trigger_review = any_text_triggering(sum([x['text'].split(' ') for x in self.reviews], []), trigger_phrases) if self.reviews else None  # Review Text
+        self.trigger_website = search_key_terms(self.website, trigger_phrases) if self.website else None
+        self.is_triggering = any([self.trigger_street,
+                                self.trigger_review_image,
+                                self.trigger_review,
+                                self.trigger_website])
+
         # Writing descriptions to file for testing review
         if desc:
-            desc_file = open('descriptions.txt', 'w', encoding='utf-8')
-            desc_file.write(','.join(strings) + '\n')
-            desc_file.close()
+            with open('descriptions.txt', 'w', encoding='utf-8') as desc_file:
+                desc_file.write(','.join(strings) + '\n')
         if verbose:
             print('Done')
             sys.stdout.flush()
         return self
+
     # # #
     #  To remove all the images you just saved in the process
     # Somethong something google TOS

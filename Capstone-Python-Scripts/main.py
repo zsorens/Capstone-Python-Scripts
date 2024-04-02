@@ -1,3 +1,4 @@
+
 # # # # # # # # # # # # # #
 # Main pipeline file
 # # # # # # # # # # # # # #
@@ -119,7 +120,9 @@ if __name__ == '__main__':
     #     a. We can als limit review image sizes if a place has a lot of images i guess. See store.py
     # 5. Check triggers. Calculates indivdual triggers asnd then combines to into is_triggering.
     for store in stores:
+        print(f"Streetview image retrieved for {store.place['name']}")
         store.get_place_details(verbose=args.verbose).get_streetview_image(verbose=args.verbose).get_review_image(verbose=args.verbose)
+        print(f"Streetview image retrieved for (After) {store.place['name']}")
         store.extract_image_text(reviews=args.real, verbose = args.verbose)
         store.trigger_check(trigger_phrases, verbose=args.verbose)
         # if not args.real:
