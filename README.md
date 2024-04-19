@@ -7,13 +7,12 @@ Barebones proof-of-concept for capstone project
 - Google VertexAI to get descriptions of photos
 - Microsoft SQL Server integration (or Azure, similar Syntax)
 ## Contacts:
-- Alvin Tran | alvin.tran@louisville.edu
-- J Sanders | jacob.sanders@louisville.edu
-- Hoang Chau | hoang.chau@louisville.edu
-- Lomus Hona | lomus.hona@louisville.edu
-- Huy Le | huy.le.2@louisville.edu
+- Adam Noble | adam.noble@louisville.edu
+- Chris Jones | christopher.jones.16@louisville.edu
+- Ishan Talreja | ishan.talreja@louisville.edu
 - Zane Sorensen | zgsore01@louisville.edu
 - Collin Shields | collin.shields@louisville.edu
+
 
 ## Notes on Notebooks
 - `check_with_db.ipynb` - Reconciles the permit database with the triggers we find. Also to see if we can find the addresses in our permit database with Google Places API
