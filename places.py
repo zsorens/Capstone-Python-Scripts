@@ -5,6 +5,8 @@ import dotenv
 import os
 import requests
 import json
+import logging
+from ratelimit import limits, sleep_and_retry
 
 dotenv.load_dotenv()
 
@@ -17,15 +19,29 @@ def load_zipcodes(path):
 # GET info from API with query, recieves list of google places.
 # https://developers.google.com/maps/documentation/places/web-service/search-text
 # https://developers.google.com/maps/documentation/places/web-service/text-search -> probably s hould udpate for new version?
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@sleep_and_retry
+@limits(calls=95, period=1)  # Adjust the # calls per second and period according to your API quota
 def get_places(query):
     api_key = os.getenv('MAPS_API_KEY')
     url = f'https://maps.googleapis.com/maps/api/place/textsearch/json?query={query}&key={api_key}'
     resp = requests.get(url)
-    if resp.status_code != 200:
+    if resp.status_code == 200:
+        logger.info(f"API request successful for query: {query}")
+        data = resp.json()
+        return data['results']
+    else:
+        logger.error(f"ERROR: request to Maps Places API failed with status code {resp.status_code} for query: {query}")
+        return None
+    """if resp.status_code != 200:
         print(f'ERROR: request to Maps Places API failed with status code {resp.status_code}')
         return None
     data = resp.json()  
-    return data['results']
+    return data['results']"""
 
 #def get_website(id):
     #api_key = os.getenv('MAPS_API_KEY')

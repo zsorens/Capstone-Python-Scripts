@@ -1,11 +1,15 @@
 from google.cloud import vision
-#
+import dotenv
+import os
+
+dotenv.load_dotenv()
+key_path = os.environ.get("KEY_JSON_PATH")
 # Google vision is a service that allws the reading of text from an image
 def extract_image_text(image_path):
     """Detects text in the file located in Google Cloud Storage or on the Web.
     """
     #client = vision.ImageAnnotatorClient()
-    client = vision.ImageAnnotatorClient.from_service_account_json(r'C:\Users\ceywa\Downloads\Capstone-Python-Scripts-Cey\uplifted-crow-414519-453cb0366744.json')
+    client = vision.ImageAnnotatorClient.from_service_account_json(key_path)
     with open(image_path, 'rb') as f:
         content = f.read()
     image = vision.Image(content=content)

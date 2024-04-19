@@ -2,7 +2,10 @@
 import os
 import sys
 import shutil
+import re
 import json
+import requests
+from requests.exceptions import Timeout
 from vision import extract_image_text
 
 
@@ -85,17 +88,25 @@ class Store:
     # # #
     # Street View Images
     # images_dir exepcts filepath relative to function to save photos
-    def get_streetview_image(self, images_dir = None, verbose = False):
+    def get_streetview_image(self, images_dir = None, verbose = False, timeout = 30):
         if not images_dir: # If we provide null, give the one we created it with.
             images_dir = self.images_dir
         os.makedirs(images_dir, exist_ok=True)  # Create the directory if it doesn't exist
         if verbose:
             print('Getting streetview images... ', end='')
             sys.stdout.flush()
+        try:
+            image = get_streetview_image(self.place['formatted_address'], timeout=timeout)
+        except Timeout:
+            if verbose:
+                print(f'Timeout occurred while retrieving streetview image for {self.place["name"]}')
+            return self
+
         # Make directory to temporarily store data
         if not os.path.isdir(images_dir): 
             os.mkdir(images_dir)
         image = get_streetview_image(self.place['formatted_address'])
+
         if image is None:
             if verbose:
                 print('ERROR: Unable to retrieve streetview image for {0}'.format(self.place['name']), end='')
@@ -154,58 +165,78 @@ class Store:
     # Extracting image text
     # reviews -> If you don't want to process the reviews as theres a LOT of images
     # limit -> limited number of reviews you read
-    def extract_image_text(self, reviews = False, review_limit = None, verbose = False):
+     
+    def extract_image_text(self, reviews=False, review_limit=None, verbose=False):
         if verbose:
             print('Extracting text from images... ', end='')
         sys.stdout.flush()
         if self.image_path:
-            self.image_text = extract_image_text(self.image_path)[1:] #The first index is a the unparsed string, while [1:n] is that same string, split by " " so we use those.
-            # I wonder why we just didn't do "string" in "string" since thats essentailyl the same as iterating through each of these already broken up ones...
+            try:
+                self.image_text = extract_image_text(self.image_path)[1:]
+            except Exception as e:
+                print(f"Error extracting text from {self.image_path}: {str(e)}")
+                self.image_text = ''
         else:
             if verbose:
                 print("No image path...", end='')
             self.image_text = ''
         if reviews and self.review_images_dir:
-            for root, dirs, files in os.walk(self.review_images_dir): # Scan all files in review_iamges_dir
+            for root, dirs, files in os.walk(self.review_images_dir):
                 for name in files:
-                    if self.review_text: # First time, we should assingn it (as it is null
-                        self.image_review_text = extract_image_text(os.path.join(root, name))[1:] #The first index is a the unparsed string, white [1:n] is that same string, split by \n.
-                    else: #otherwise we should append to the incrasingly l ong text strings.
-                        self.image_review_text += " " + extract_image_text(os.path.join(root, name))[1:] #The first index is a the unparsed string, white [1:n] is that same string, split by \n.
+                    image_path = os.path.join(root, name)
+                    try:
+                        review_text = extract_image_text(image_path)[1:]
+                        if self.image_review_text:
+                            self.image_review_text += " " + " ".join(review_text)
+                        else:
+                            self.image_review_text = " ".join(review_text)
+                    except Exception as e:
+                        print(f"Error extracting text from {image_path}: {str(e)}")
                     if review_limit:
                         review_limit -= 1
-                        if review_limit <= 0: break
-                        else: pass
+                        if review_limit <= 0:
+                            break
         if verbose:
             print(f'Done')
         return self
-    # Check triggers for all our variables.
-    def trigger_check(self, trigger_phrases, verbose=False, desc=False):
+
+    #check triggers for all our variables 
+    def trigger_check(self, trigger_phrases, verbose=False):
         if verbose:
             print('Checking if store names or extracted text is triggering...', end='')
             sys.stdout.flush()
         name = self.place['name']
-        strings = [name]  # We should always have the name
+        strings = [name]
         if self.image_text:
-            strings += self.image_text  # Image text of streetview image
-
-        self.trigger_street = any_text_triggering(strings, trigger_phrases)  # Streetview + name
-        self.trigger_review_image = any_text_triggering(self.image_review_text, trigger_phrases) if self.image_review_text else None  # User-submitted images
-        self.trigger_review = any_text_triggering(sum([x['text'].split(' ') for x in self.reviews], []), trigger_phrases) if self.reviews else None  # Review Text
+            strings += self.image_text
+        self.trigger_street = any_text_triggering(strings, trigger_phrases)
+        self.trigger_review_image = any_text_triggering(self.image_review_text.split(), trigger_phrases) if self.image_review_text else None
+        self.trigger_review = any_text_triggering(sum([x['text'].split() for x in self.reviews], []), trigger_phrases) if self.reviews else None
         self.trigger_website = search_key_terms(self.website, trigger_phrases) if self.website else None
-        self.is_triggering = any([self.trigger_street,
-                                self.trigger_review_image,
-                                self.trigger_review,
-                                self.trigger_website])
-
-        # Writing descriptions to file for testing review
-        if desc:
-            with open('descriptions.txt', 'w', encoding='utf-8') as desc_file:
-                desc_file.write(','.join(strings) + '\n')
+        self.is_triggering = any([self.trigger_street, self.trigger_review_image, self.trigger_review, self.trigger_website])
         if verbose:
             print('Done')
             sys.stdout.flush()
         return self
+
+    def save_info(self, zipcode, store_type, output_dir):
+        store_name = self.place['name']
+        # Replace invalid characters with underscores
+        store_name = re.sub(r'[<>:"/\\|?*]', '_', store_name)
+        file_name = f"{store_name}.txt"
+        folder_path = os.path.join(output_dir, zipcode, store_type)
+        os.makedirs(folder_path, exist_ok=True)
+        file_path = os.path.join(folder_path, file_name)
+        
+        with open(file_path, 'w') as file:
+            file.write(f"Store Name: {self.place['name']}\n")
+            file.write(f"Address: {self.place['formatted_address']}\n")
+            file.write(f"Is Triggering: {self.is_triggering}\n")
+            file.write(f"Trigger Street: {self.trigger_street}\n")
+            file.write(f"Trigger Review Image: {self.trigger_review_image}\n")
+            file.write(f"Trigger Review: {self.trigger_review}\n")
+            file.write(f"Trigger Website: {self.trigger_website}\n")
+    
 
     # # #
     #  To remove all the images you just saved in the process

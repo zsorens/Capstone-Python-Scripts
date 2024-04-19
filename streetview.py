@@ -23,7 +23,7 @@ dotenv.load_dotenv()
     return resp.content
 """
 
-def get_streetview_image(location, image_size='640x640'):
+def get_streetview_image(location, image_size='640x640', timeout = 30):
     api_key = os.getenv('MAPS_API_KEY')
     if not api_key:
         print('ERROR: Missing Google Maps API key. Please set the MAPS_API_KEY environment variable.')

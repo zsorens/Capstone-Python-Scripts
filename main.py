@@ -9,14 +9,14 @@
 #
 #
 
-
-
-
-
 import argparse
 import os
+import csv
 import sys
-
+import time
+import logging
+import time
+import pandas as pd
 # from detect_text import any_text_triggering
 # from places import get_places,  get_place_details,  load_zipcodes, get_place_photo
 # from streetview import get_streetview_image
@@ -29,6 +29,8 @@ from places import get_places
 # from vision import extract_image_text
 # import files
 import sql
+
+start = time.time()
 
 def load_text(path):
     with open(path, 'r') as f:
@@ -50,16 +52,43 @@ def get_stores(zipcodes: list, store_types: list, images_dir = 'streetview_image
     if not real:
         zipcodes = zipcodes[:1]
         store_types = store_types[:1]
+    
+    output_dir = 'store_info'  # Directory to save store information files
+
+    print("Writing Stores to file....")
     for zipcode in zipcodes:
+        print(f"Processing zipcode: {zipcode}")
         for store_type in store_types: # Make queries
             query = f'{store_type}+in+{zipcode}'
-            for place in get_places(query):
-                if(images_dir):
-                    stores.append(Store(place, images_dir)) #  Images_dir is just held in store for fun -> probably shouldnt be there but helps consistency
-                else:
-                    stores.append(Store(place))
-    return stores
+            places = get_places(query)
+            if places is None:
+                print(f"Skipping {store_type} in {zipcode} due to rate limit exceeded.")
+                continue
+            
+            #List of stores that crash the program when trying to collect their streetview image
+            stores_to_skip = ["Kroger", "The Little Clinic", "Costco Pharmacy"]
 
+            for place in places:
+                store_name = place['name']
+                if any(skip_name in store_name for skip_name in stores_to_skip):
+                    print(f"Skipping store: {store_name}")
+                    continue
+
+                store = Store(place, images_dir)
+                store.get_place_details(verbose=args.verbose)
+                store.get_streetview_image(verbose=args.verbose)
+                store.get_review_image(verbose=args.verbose)
+                store.extract_image_text(reviews=args.real, verbose=args.verbose)
+                store.trigger_check(trigger_phrases, verbose=args.verbose)
+                store.save_info(zipcode, store_type, output_dir)
+                stores.append(store)
+           
+    print("File Complete!")
+    return stores 
+
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 if __name__ == '__main__':
     # Functional Arguments, sort of information we'll be using to pull data and identify trigers.
@@ -101,7 +130,7 @@ if __name__ == '__main__':
     store_types = load_text(args.store_types)
     trigger_phrases = load_text(args.trigger_phrases)
     store_sql = args.sql
-
+    store_csv = args.logging
     # Get places for all store types in all zipcodes
     if args.verbose:
         print('Getting places... ', end='')
@@ -119,15 +148,17 @@ if __name__ == '__main__':
     # 4. Extract images from reviews and streetview. If real, will do both, street_view_images iirc
     #     a. We can als limit review image sizes if a place has a lot of images i guess. See store.py
     # 5. Check triggers. Calculates indivdual triggers asnd then combines to into is_triggering.
-    for store in stores:
+    """for store in stores:
         print(f"Streetview image retrieved for {store.place['name']}")
         store.get_place_details(verbose=args.verbose).get_streetview_image(verbose=args.verbose).get_review_image(verbose=args.verbose)
         print(f"Streetview image retrieved for (After) {store.place['name']}")
         store.extract_image_text(reviews=args.real, verbose = args.verbose)
         store.trigger_check(trigger_phrases, verbose=args.verbose)
         # if not args.real:
-        #     break
-        
+        #     break"""
+    
+
+    
     # Group places with possible indicators and without
     if args.verbose:
         print('Grouping results... ', end='')
@@ -136,27 +167,71 @@ if __name__ == '__main__':
     places_without_indicators = []
     if store_sql:
         sql.set_up()
+    
+    store_dicts = []
     for store in stores:
+        print(f"Number of stores: {len(stores)}")
+        print(f"Store: {store.place['name']}, is_triggering: {store.is_triggering}")
         # Save store info and images
         if args.cache:
             store.save(args.store_dir)
         if store.is_triggering:
             places_with_indicators.append(store)
-            # store_to_db does an upsert, inserting if not existing and then updating is so. Here it is making sure we have it in db. 
+            logging.info(f"Added store to places_with_indicators: {store.place['name']}")
+            # store_to_db does an upsert, inserting if not existing and then updating is so. Here it is making sure we have it in db.
             #     -> See .sql if you'd like to store additional metadata
             # store_flag then updates the flags of the store in table.
             if store_sql:
                 if args.verbose:
-                    print('Storing to sql... ', end = '')
+                    print('Storing to sql... ', end='')
                 sql.store_to_db(store)
                 sql.store_flag(store)
+            if store_csv:
+                if args.verbose:
+                    print('Storing to csv... ', end='')
+                store_dict = {
+                    'place': store.place,
+                    'flag_text': store.is_triggering,
+                    'flag_image': None, #remove this from UI
+                    'flag_website': store.trigger_website,
+                    'last_update' : None, #remove this from UI
+                    'last_flagged' : None, #remove this from UI
+                    'flag_street': store.trigger_street,
+                    'flag_review_image': store.trigger_review_image,
+                    'flag_review': store.trigger_review,
+                        }
+                store_dicts.append(store_dict)
         else:
             places_without_indicators.append(store)
+            logging.info(f"Added store to places_without_indicators: {store.place['name']}")
     print(f'Done [{len(places_with_indicators)} w/ indicators] [{len(places_without_indicators)} w/o indicators]')
+
+    print(f"Number of places with indicators: {len(places_with_indicators)}")
+    print("Places with indicators:")
     
+    if store_sql:
+        sql.query("select * from INIMAM01.stores").to_csv("store_table.csv", index=False) #Makes a CSV for the temp UI. Can be remove once UI can pull from DB.
+    if store_csv:
+        df = pd.DataFrame(store_dicts)
+        df.to_csv("data.csv", index=False)
+    
+    for place in places_with_indicators:
+        print(place.place['name'])
+
+    print(f"Number of places without indicators: {len(places_without_indicators)}")
+    print("Places without indicators:")
+    for place in places_without_indicators:
+        print(place.place['name'])
+
     # Print results
     print(f'Places with possible indicators:', [store.place['name'] for store in places_with_indicators])
     print(f'\nPlaces without possible indicators:', [store.place['name'] for store in places_without_indicators])
-    
+
+end = time.time()
+print("Time of Program: ", end - start)
+
+
+
+
+            
         
-    
